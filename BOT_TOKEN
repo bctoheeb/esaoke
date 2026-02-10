@@ -1,0 +1,72 @@
+const TelegramBot = require('node-telegram-bot-api');
+require('dotenv').config();
+
+// Replace with your actual token in .env file or Render Environment Variables
+const token = process.env.BOT_TOKEN;
+const bot = new TelegramBot(token, { polling: true });
+
+// In-memory storage (Note: This clears if the server restarts on Render)
+// For production, consider using a database like MongoDB or PostgreSQL.
+const userStates = {};
+
+const QUESTIONS = [
+  "1. What is your favorite brand of electronics?",
+  "2. How often do you shop online (Weekly/Monthly/Rarely)?",
+  "3. Which social media platform do you use most?",
+  "4. What is your age group (under 18, 18-30, 31-50, 50+)?",
+  "5. Would you like to receive our monthly newsletter? (Yes/No)"
+];
+
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  // Initialize user state if it doesn't exist
+  if (!userStates[chatId]) {
+    userStates[chatId] = { step: -1, lastCompleted: 0, answers: [] };
+  }
+
+  const user = userStates[chatId];
+
+  // Handle /start command
+  if (text === '/start') {
+    const now = Date.now();
+    
+    // Check if user is in "cool-down" period
+    if (user.lastCompleted && (now - user.lastCompleted < ONE_WEEK_MS)) {
+      const daysLeft = Math.ceil((ONE_WEEK_MS - (now - user.lastCompleted)) / (1000 * 60 * 60 * 24));
+      bot.sendMessage(chatId, `You have already completed the challenge! Please come back in ${daysLeft} days for a new one.`);
+      return;
+    }
+
+    user.step = 0;
+    user.answers = [];
+    bot.sendMessage(chatId, "Welcome to our Marketing Challenge! Answer 5 questions to help us improve.\n\n" + QUESTIONS[0]);
+    return;
+  }
+
+  // Logic for answering questions
+  if (user.step >= 0 && user.step < QUESTIONS.length) {
+    user.answers.push(text);
+    user.step++;
+
+    if (user.step < QUESTIONS.length) {
+      // Ask next question
+      bot.sendMessage(chatId, QUESTIONS[user.step]);
+    } else {
+      // Finished 5 questions
+      user.lastCompleted = Date.now();
+      user.step = -1; // Reset step
+      
+      console.log(`User ${chatId} submitted:`, user.answers); // Log data for marketing
+      
+      bot.sendMessage(chatId, "Thank you for your feedback! You've completed the challenge. Please come back next week for a new challenge!");
+    }
+  } else if (user.step === -1 && text !== '/start') {
+    bot.sendMessage(chatId, "Type /start to begin the challenge.");
+  }
+});
+
+console.log("Bot is running...");
